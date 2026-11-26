@@ -57,6 +57,9 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="log codes, type nothing")
     parser.add_argument("--port", type=int, default=code_link.PORT)
     parser.add_argument("--window-title", default="Roblox")
+    parser.add_argument("--click-first", action="store_true",
+                        help="click the Codes box before every paste (safe: it is empty "
+                             "then), in case focus was lost; costs ~0.1 s")
     parser.add_argument("--other-clients", action="store_true",
                         help="also submit into every other Roblox window on this PC "
                              "(~175 ms each), then return to the one in front")
@@ -82,6 +85,11 @@ def main():
     if any(field_typer.window_elevated(h) for h in windows) and not field_typer.self_elevated():
         log("WARNING: Roblox runs as administrator and this does not: pastes will be "
             "dropped. Start it with Start Code Receiver.bat.")
+    front = roblox_in_front(args.window_title)
+    if front is not None and not args.dry_run:
+        # Put the caret in the Codes box now, so nobody has to click it.
+        field_typer.click_field(front, **CLICK)
+        log("clicked the Codes box of the Roblox window in front")
     log(f"listening on UDP {args.port}{' (dry run)' if args.dry_run else ''}; "
         f"{len(windows)} Roblox window(s). Keep Roblox in front with the Codes field clicked.")
     try:
@@ -96,9 +104,10 @@ def main():
             def report_back(front_ms, others_ms, sent):
                 # Timing back to the decoder PC (its log shows the round trip).
                 if message_id:
+                    busy = round((time.perf_counter() - received) * 1000)
                     code_link.send_ack(source, message_id, code,
                                        {"front": front_ms, "others": others_ms,
-                                        "sent": sent}, key=receiver.key)
+                                        "sent": sent, "busy": busy}, key=receiver.key)
             if code is None:
                 log(source)
                 continue
@@ -110,6 +119,10 @@ def main():
                 log(f"received {code} from {source}: NOT typed, Roblox is not in front")
                 report_back(None, [], False)
                 continue
+            if args.click_first:
+                # The box is empty between codes, so this click cannot wipe
+                # anything; it only restores focus if it was lost.
+                field_typer.click_field(hwnd, **field_typer.OTHER_CLIENT_CLICK)
             if args.other_clients:
                 # Front window first, then every other client, then back.
                 start = time.perf_counter()
