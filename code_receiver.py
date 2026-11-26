@@ -101,6 +101,7 @@ def main():
             "(windows opened later are included too)")
     else:
         log("SINGLE-CLIENT MODE (--front-only): only the Roblox window in front gets codes")
+    home = roblox_in_front(args.window_title)  # the window that gets codes first
     try:
         while True:
             got = receiver.next(timeout=1.0)
@@ -128,6 +129,18 @@ def main():
                 log(f"received {code} from {source}: NOT typed, Roblox is not in front")
                 report_back(None, [], False)
                 continue
+            if args.other_clients:
+                # Always start from the same ("home") window: if a switch-back
+                # failed, another Roblox window may be in front, and pasting
+                # there first shuffled which window got which code.
+                if home is None or home not in field_typer.find_windows(args.window_title):
+                    home = hwnd
+                if hwnd != home:
+                    field_typer.click_field(home, **field_typer.OTHER_CLIENT_CLICK)
+                    if field_typer.user32.GetForegroundWindow() != home:
+                        log(f"could not bring the home window back; starting from the one in front")
+                        home = hwnd
+                hwnd = home
             if args.click_first:
                 # The box is empty between codes, so this click cannot wipe
                 # anything; it only restores focus if it was lost.

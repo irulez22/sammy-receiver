@@ -575,11 +575,12 @@ def press_enter():
 # 2026-11-26 (.blocks/multi_submit.py, 8/8 rounds landed): no settle, 10 ms
 # between the two clicks, no slow move or drift -> that client's Enter 175 ms
 # after the first client's.
-# 2026-11-26 later: one click after switching and a 10 ms wait (was a double
-# click + 50 ms) with 5 ms focus polling: 175 -> 95 ms, 3/3 rounds landed
-# (pictures of the second client after each Enter).
+# 2026-11-26 later: a single click after switching was 95 ms and landed 12/12
+# on the decoder PC, but on the second PC codes went into only one of its two
+# windows (user watched) -- one click there only activates the window. Back to
+# the double click (with 5 ms focus polling), 30 ms after it: ~120 ms.
 OTHER_CLIENT_CLICK = {"settle": 0.0, "click_gap": 0.01, "move_seconds": 0.0,
-                      "drift_seconds": 0.0, "clicks": 1, "after_click": 0.01}
+                      "drift_seconds": 0.0, "clicks": 2, "after_click": 0.03}
 
 
 def submit_to_windows(code, hwnds, clock=time.perf_counter):
