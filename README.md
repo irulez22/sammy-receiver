@@ -16,8 +16,9 @@ Roblox window on the PC too).
 - Double-click `Start Code Receiver.bat`. It updates itself from this repo,
   then starts as administrator.
 - Keep Roblox in front with the Codes window open.
-- `Start Code Receiver.bat --other-clients` also fills every other Roblox
-  window on this PC (~175 ms each).
+- Every Roblox window on this PC gets the code (front one first, then the
+  others, ~95 ms each). `Start Code Receiver.bat --front-only` limits it to
+  the window in front.
 - `--dry-run` only logs what it receives.
 
 Logs go to `corpus/receiver_logs/` next to the files.

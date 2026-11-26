@@ -12,7 +12,8 @@ allowing inbound UDP on code_link.PORT for Python.
 
   py -3.14 code_receiver.py              listen and submit
   py -3.14 code_receiver.py --dry-run    listen and log only
-  py -3.14 code_receiver.py --other-clients   also fill this PC's other Roblox windows
+  py -3.14 code_receiver.py --front-only   only the Roblox window in front
+  (by default every other Roblox window on the PC gets the code too)
 """
 import argparse
 import sys
@@ -60,9 +61,11 @@ def main():
     parser.add_argument("--click-first", action="store_true",
                         help="click the Codes box before every paste (safe: it is empty "
                              "then), in case focus was lost; costs ~0.1 s")
-    parser.add_argument("--other-clients", action="store_true",
+    parser.add_argument("--other-clients", action="store_true", default=True,
                         help="also submit into every other Roblox window on this PC "
-                             "(~175 ms each), then return to the one in front")
+                             "(~95 ms each), then return to the one in front (default)")
+    parser.add_argument("--front-only", dest="other_clients", action="store_false",
+                        help="only the Roblox window in front")
     args = parser.parse_args()
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     log_path = LOG_DIR / time.strftime("%Y%m%d_%H%M%S.log")
