@@ -584,22 +584,95 @@ OTHER_CLIENT_CLICK = {"settle": 0.0, "click_gap": 0.01, "move_seconds": 0.0,
                       "drift_seconds": 0.0, "clicks": 2, "after_click": 0.01}
 
 
-def submit_to_windows(code, hwnds, clock=time.perf_counter):
+def clipboard_get():
+    """Text on the Windows clipboard ('' when none)."""
+    import ctypes
+    user32 = ctypes.windll.user32
+    kernel32 = ctypes.windll.kernel32
+    user32.GetClipboardData.restype = ctypes.c_void_p
+    kernel32.GlobalLock.restype = ctypes.c_void_p
+    kernel32.GlobalLock.argtypes = [ctypes.c_void_p]
+    kernel32.GlobalUnlock.argtypes = [ctypes.c_void_p]
+    if not user32.OpenClipboard(None):
+        return ""
+    try:
+        handle = user32.GetClipboardData(13)  # CF_UNICODETEXT
+        if not handle:
+            return ""
+        pointer = kernel32.GlobalLock(handle)
+        try:
+            return ctypes.wstring_at(pointer) if pointer else ""
+        finally:
+            kernel32.GlobalUnlock(handle)
+    finally:
+        user32.CloseClipboard()
+
+
+def field_holds(code, gap=0.01):
+    """True when the focused field holds exactly `code`: select all, copy, and
+    compare the clipboard. Proof that the paste landed in the box, before
+    Enter is pressed (a lost click let a paste vanish, live 2026-11-26).
+    Measured in Roblox (both clients, as admin): the copy returns the pasted
+    code; an empty box returns nothing. ~60-100 ms."""
+    sentinel = "⁣no-copy"
+    clipboard_set(sentinel)
+    for vk, scan in ((0x41, 0x1E), (0x43, 0x2E)):  # Ctrl+A, Ctrl+C
+        key_event(0x11, 0x1D)
+        time.sleep(gap)
+        key_event(vk, scan)
+        time.sleep(gap)
+        key_event(vk, scan, up=True)
+        key_event(0x11, 0x1D, up=True)
+        time.sleep(gap)
+    held = clipboard_get()
+    return held.strip() == code
+
+
+VERIFY_OTHER_WINDOWS = True  # check each extra window's box before Enter
+
+
+def submit_to_windows(code, hwnds, clock=time.perf_counter, verify=None, attempts=3):
     """Paste `code` and press Enter in each window of `hwnds`, one after the
     other: bring it forward, click its Codes field (empty: the code was never
-    pasted there), paste, Enter. Windows only send keys to the window in front,
-    so this is sequential. Returns [{hwnd, sent, ms}] (ms = since the call)."""
+    pasted there), paste, check the box holds the code, Enter. Windows only
+    send keys to the window in front, so this is sequential. A check that fails
+    clicks and pastes again (Ctrl+A first, so the paste replaces anything);
+    Enter is pressed only once the box is proven to hold the code.
+    Returns [{hwnd, sent, verified, tries, ms}] (ms = since the call)."""
+    verify = VERIFY_OTHER_WINDOWS if verify is None else verify
     start = clock()
     results = []
     for hwnd in hwnds:
+        sent = verified = False
+        tries = 0
         try:
-            click_field(hwnd, **OTHER_CLIENT_CLICK)
-            sent = type_code(code, hwnd=hwnd)
+            for tries in range(1, attempts + 1):
+                click_field(hwnd, **OTHER_CLIENT_CLICK)
+                if tries > 1:
+                    # Select all, so this paste replaces whatever a half-landed
+                    # earlier try left in the box.
+                    key_event(0x11, 0x1D)
+                    time.sleep(0.015)
+                    key_event(0x41, 0x1E)
+                    key_event(0x41, 0x1E, up=True)
+                    key_event(0x11, 0x1D, up=True)
+                    time.sleep(0.015)
+                if not type_code(code, hwnd=hwnd):
+                    continue
+                if not verify:
+                    sent = True
+                    break
+                verified = field_holds(code)
+                if verified:
+                    sent = True
+                    break
             if sent:
+                clipboard_set(code)
                 press_enter()
         except Exception:  # noqa: BLE001 - one client failing must not stop the rest
             sent = False
-        results.append({"hwnd": hwnd, "sent": sent, "ms": round((clock() - start) * 1000)})
+        results.append({"hwnd": hwnd, "sent": sent, "verified": verified, "tries": tries,
+                        "ms": round((clock() - start) * 1000)})
     return results
 
 

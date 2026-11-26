@@ -158,7 +158,8 @@ def main():
                 field_typer.click_field(hwnd, **CLICK)
                 log(f"{'SUBMITTED' if sent else 'paste refused:'} {code} from {source} "
                     f"(front {front_ms} ms; others: "
-                    + (", ".join(f"{'sent' if r['sent'] else 'FAILED'} +{front_ms + r['ms']} ms"
+                    + (", ".join(f"{('verified' if r.get('verified') else 'sent') if r['sent'] else 'FAILED'}"
+                                 f"{' after ' + str(r['tries']) + ' tries' if r.get('tries', 1) > 1 else ''} +{front_ms + r['ms']} ms"
                                  for r in results) or "none") + ")")
                 continue
             phases = submit(code, hwnd)
