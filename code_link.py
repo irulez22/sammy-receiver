@@ -29,6 +29,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 KEY_FILE = ROOT / "code_link.key"
 PORT = 47474
+ACK_PORT = PORT + 1  # receivers report timings back to the sender here
 COPIES = 3            # UDP can drop a packet; duplicates are ignored by id
 MAX_AGE = 120.0       # seconds; generous because PC clocks can differ
 CODE_MAX = 40
@@ -82,12 +83,48 @@ def unpack(data, key, now=None):
     return code, message_id
 
 
+def pack_ack(message_id, code, report, key):
+    """A receiver's signed timing report for one code (bytes)."""
+    body = json.dumps({"ack": message_id, "code": code, "report": report,
+                       "t": round(time.time(), 3)}, separators=(",", ":"), sort_keys=True)
+    return json.dumps({"body": body, "sig": _signature(key, body)},
+                      separators=(",", ":")).encode("utf-8")
+
+
+def unpack_ack(data, key):
+    """(message_id, code, report) from an ack datagram, or raise ValueError."""
+    try:
+        outer = json.loads(data.decode("utf-8"))
+        body, sig = outer["body"], outer["sig"]
+    except (ValueError, KeyError, TypeError, UnicodeDecodeError) as error:
+        raise ValueError(f"not an ack: {error}") from None
+    if not hmac.compare_digest(_signature(key, body), sig):
+        raise ValueError("bad signature")
+    inner = json.loads(body)
+    if "ack" not in inner:
+        raise ValueError("not an ack")
+    return inner["ack"], inner.get("code"), inner.get("report") or {}
+
+
+def send_ack(ip, message_id, code, report, key=None, port=ACK_PORT):
+    """Tell the sender at `ip` how this PC handled its code (best effort)."""
+    key = key if key is not None else load_key(create=False)
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.sendto(pack_ack(message_id, code, report, key), (ip, port))
+    except OSError:
+        pass
+    finally:
+        sock.close()
+
+
 class Sender:
     """Broadcasts codes. `to` is "255.255.255.255" (everyone) or one address."""
 
     def __init__(self, key=None, port=PORT, to="255.255.255.255"):
         self.key = key if key is not None else load_key()
         self.port, self.to = port, to
+        self.sent_at = {}  # message id -> perf_counter at send, for ack round trips
         # Windows sends a 255.255.255.255 broadcast out of ONE adapter (here
         # a VPN adapter, 2026-11-21), so broadcast from every local
         # IPv4 address; receivers drop the duplicates by id.
@@ -107,6 +144,7 @@ class Sender:
         """Send one code (COPIES datagrams per adapter, same id). Returns the id."""
         message_id = secrets.token_hex(8)
         data = pack(code, self.key, message_id)
+        self.sent_at[message_id] = time.perf_counter()
         sent = 0
         for _ in range(COPIES):
             for sock in self.socks:
@@ -119,9 +157,41 @@ class Sender:
             raise OSError("no network adapter could send the code")
         return message_id
 
+    def listen_acks(self, callback, port=ACK_PORT):
+        """Call callback(ip, code, round_trip_ms, report) for each receiver's
+        timing report, on a background thread. Best effort: if the port is
+        busy, acks are simply not shown."""
+        import threading
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.bind(("0.0.0.0", port))
+        except OSError:
+            return False
+        self.socks_ack = sock
+
+        def run():
+            while True:
+                try:
+                    data, (ip, _port) = sock.recvfrom(4096)
+                except OSError:
+                    return
+                arrived = time.perf_counter()
+                try:
+                    message_id, code, report = unpack_ack(data, self.key)
+                except ValueError:
+                    continue
+                sent = self.sent_at.get(message_id)
+                callback(ip, code, round((arrived - sent) * 1000) if sent else None, report)
+
+        threading.Thread(target=run, daemon=True).start()
+        return True
+
     def close(self):
         for sock in self.socks:
             sock.close()
+        if getattr(self, "socks_ack", None) is not None:
+            self.socks_ack.close()
 
 
 def local_addresses():
@@ -158,6 +228,7 @@ class Receiver:
         if message_id in self.seen:
             return self.next(timeout)
         self.seen.append(message_id)
+        self.last_id = message_id
         del self.seen[:-self.seen_limit]
         return code, ip
 

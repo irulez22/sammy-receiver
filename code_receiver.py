@@ -90,6 +90,15 @@ def main():
             if got is None:
                 continue
             code, source = got
+            received = time.perf_counter()
+            message_id = getattr(receiver, "last_id", None)
+
+            def report_back(front_ms, others_ms, sent):
+                # Timing back to the decoder PC (its log shows the round trip).
+                if message_id:
+                    code_link.send_ack(source, message_id, code,
+                                       {"front": front_ms, "others": others_ms,
+                                        "sent": sent}, key=receiver.key)
             if code is None:
                 log(source)
                 continue
@@ -99,6 +108,7 @@ def main():
             hwnd = roblox_in_front(args.window_title)
             if hwnd is None:
                 log(f"received {code} from {source}: NOT typed, Roblox is not in front")
+                report_back(None, [], False)
                 continue
             if args.other_clients:
                 # Front window first, then every other client, then back.
@@ -106,9 +116,10 @@ def main():
                 sent = field_typer.type_code(code, hwnd=hwnd)
                 if sent:
                     field_typer.press_enter()
-                front_ms = round((time.perf_counter() - start) * 1000)
+                front_ms = round((time.perf_counter() - received) * 1000)
                 others = [h for h in field_typer.find_windows(args.window_title) if h != hwnd]
                 results = field_typer.submit_to_windows(code, others) if sent else []
+                report_back(front_ms, [front_ms + r["ms"] for r in results if r["sent"]], sent)
                 field_typer.click_field(hwnd, **CLICK)
                 log(f"{'SUBMITTED' if sent else 'paste refused:'} {code} from {source} "
                     f"(front {front_ms} ms; others: "
@@ -116,6 +127,8 @@ def main():
                                  for r in results) or "none") + ")")
                 continue
             phases = submit(code, hwnd)
+            report_back(round((time.perf_counter() - received) * 1000)
+                        - (phases["tidy"] if phases else 0), [], phases is not None)
             if phases is None:
                 log(f"received {code} from {source}: paste refused")
             else:
