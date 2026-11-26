@@ -12,12 +12,14 @@ files in place: the receiver still starts.
 import argparse
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 REPO_RAW = "https://raw.githubusercontent.com/irulez22/sammy-receiver/main/"
 NEVER = {"code_link.key"}
+CRLF, LF = bytes([13, 10]), bytes([10])
 
 
 def fetch(url, timeout=6):
@@ -34,7 +36,7 @@ def main():
     args = parser.parse_args()
     try:
         listing = fetch(args.repo + "files.txt").decode("utf-8")
-    except (urllib.error.URLError, OSError) as error:
+    except Exception as error:  # noqa: BLE001 - offline must not stop the receiver
         print(f"update: could not reach the repo ({error}); starting with the current files")
         return 0
     names = [line.strip() for line in listing.splitlines()
@@ -44,12 +46,15 @@ def main():
         if name in NEVER or "/" in name or "\\" in name or name.startswith("."):
             continue  # only plain files in this folder, never the key
         try:
-            data = fetch(args.repo + name)
-        except (urllib.error.URLError, OSError) as error:
+            data = fetch(args.repo + urllib.parse.quote(name))
+        except Exception as error:  # noqa: BLE001 - never block the receiver
             print(f"update: {name} not downloaded ({error}); keeping the current one")
             continue
+        data = data.replace(CRLF, LF)
+        if name.lower().endswith(".bat"):
+            data = data.replace(LF, CRLF)  # cmd wants CRLF
         target = ROOT / name
-        if target.exists() and target.read_bytes() == data:
+        if target.exists() and target.read_bytes().replace(CRLF, LF) == data.replace(CRLF, LF):
             continue
         changed.append(name)
         if not args.check:
