@@ -1,0 +1,9 @@
+# Files the updater keeps current (one per line). code_link.key is never listed.
+code_receiver.py
+code_link.py
+field_typer.py
+code_parts.py
+receiver_update.py
+Start Code Receiver.bat
+README.md
+files.txt

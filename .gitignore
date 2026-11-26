@@ -1,0 +1,4 @@
+code_link.key
+corpus/
+__pycache__/
+*.new
