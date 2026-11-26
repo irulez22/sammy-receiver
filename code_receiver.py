@@ -95,6 +95,12 @@ def main():
         log("clicked the Codes box of the Roblox window in front")
     log(f"listening on UDP {args.port}{' (dry run)' if args.dry_run else ''}; "
         f"{len(windows)} Roblox window(s). Keep Roblox in front with the Codes field clicked.")
+    if args.other_clients:
+        log(f"MULTI-CLIENT MODE: every code goes to the Roblox window in front, then to "
+            f"the other {max(0, len(windows) - 1)} window(s) on this PC "
+            "(windows opened later are included too)")
+    else:
+        log("SINGLE-CLIENT MODE (--front-only): only the Roblox window in front gets codes")
     try:
         while True:
             got = receiver.next(timeout=1.0)
