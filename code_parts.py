@@ -147,6 +147,30 @@ def code_shaped(token):
     return any(character.isdigit() for character in token) or token.isupper()
 
 
+def inline_code(line):
+    """The whole code when it is written on the announcement bubble itself
+    ("use code BLINGBLINGBLING", real screenshot 2026-11-26), else "".
+
+    A decoy like "USE CODE 0000" (live 2026-11-25, followed by the real code
+    in separate bubbles) is not one: an inline code must be a single word of
+    5+ letters/digits that is not one character repeated. Such a code is
+    complete on its own; it never joins later bubbles.
+    """
+    text = line.strip()
+    match = PHRASE.search(text)
+    if not match:
+        return ""
+    rest = text[match.end():].strip(" .,:;!?'\"|…-")
+    tokens = TOKEN.findall(rest)
+    tokens = [t for t in tokens if t.lower() not in WORD_STOP]
+    if len(tokens) != 1:
+        return ""
+    token = tokens[0]
+    if not token.isalnum() or not 5 <= len(token) <= CODE_MAX or len(set(token.lower())) < 2:
+        return ""
+    return token.upper()
+
+
 # Nothing on the "use code" / "the code was" bubble itself is ever a code part.
 ANNOUNCEMENT_NEVER_A_PART = True
 
