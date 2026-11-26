@@ -428,10 +428,10 @@ def activate(hwnd, settle=0.3):
     user32.keybd_event(0x12, 0x38, 0x0002, 0)     # Alt up
     user32.ShowWindow(hwnd, 9)                    # SW_RESTORE
     user32.SetForegroundWindow(hwnd)
-    for _ in range(20):
+    for _ in range(200):  # up to 1 s, checked every 5 ms (was 50 ms steps)
         if user32.GetForegroundWindow() == hwnd:
             break
-        time.sleep(0.05)
+        time.sleep(0.005)
     time.sleep(settle)
     return True
 
@@ -505,7 +505,7 @@ def _relative_move(dx, dy):
 
 
 def click_field(hwnd, point=None, drift=2, drift_seconds=0.1, settle=0.3, click_gap=0.25,
-                move_seconds=0.1):
+                move_seconds=0.1, clicks=None, after_click=0.05):
     """Put the caret in the Codes field with one deliberate click.
 
     The user allows exactly this click, right after a code is submitted (the
@@ -521,11 +521,14 @@ def click_field(hwnd, point=None, drift=2, drift_seconds=0.1, settle=0.3, click_
     if point is None:
         x, y, w, h = client_rect(hwnd)
         point = (x + round(w * FIELD_AT[0]), y + round(h * FIELD_AT[1]))
+    wanted = clicks
     clicks = 1
     if user32.GetForegroundWindow() != hwnd:
         activate(hwnd, settle)
         time.sleep(settle)
         clicks = 2
+    if wanted:
+        clicks = wanted
     cursor = wintypes.POINT()
     user32.GetCursorPos(ctypes.byref(cursor))
     pause, pydirectinput.PAUSE = pydirectinput.PAUSE, 0
@@ -541,7 +544,8 @@ def click_field(hwnd, point=None, drift=2, drift_seconds=0.1, settle=0.3, click_
             pydirectinput.click()
             if index < clicks - 1:
                 time.sleep(click_gap)
-        time.sleep(0.05)
+        if after_click:
+            time.sleep(after_click)
     finally:
         pydirectinput.PAUSE = pause
         user32.SetCursorPos(cursor.x, cursor.y)
@@ -571,8 +575,11 @@ def press_enter():
 # 2026-11-26 (.blocks/multi_submit.py, 8/8 rounds landed): no settle, 10 ms
 # between the two clicks, no slow move or drift -> that client's Enter 175 ms
 # after the first client's.
+# 2026-11-26 later: one click after switching and a 10 ms wait (was a double
+# click + 50 ms) with 5 ms focus polling: 175 -> 95 ms, 3/3 rounds landed
+# (pictures of the second client after each Enter).
 OTHER_CLIENT_CLICK = {"settle": 0.0, "click_gap": 0.01, "move_seconds": 0.0,
-                      "drift_seconds": 0.0}
+                      "drift_seconds": 0.0, "clicks": 1, "after_click": 0.01}
 
 
 def submit_to_windows(code, hwnds, clock=time.perf_counter):
